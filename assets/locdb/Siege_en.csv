@@ -1,0 +1,19 @@
+﻿ID,Pipeline,PipelineStage,Notes,TranslationNotes,Tags,Text
+1,,,Mod name.,,,Siege Mode
+2,,,Mod description.,,,"Co-op or single player siege mode where you defend against waves of units attacking your lands.  Win by building a wonder, holding the sacred sites or destroying the AI's Wonder. v0.8"
+3,,,,,,Siege Mode
+13,,,,,,"Create 1 AI player as Mongol, on a different team to have it spawn waves of units to attack"
+14,,,,,,Siege
+15,,,,,,Spawn Interval
+16,,,,,,How often should waves of units spawn
+17,,,,,,How often should waves of units spawn
+18,,,,,,
+19,,,,,,Spawn Max
+20,,,,,,Max number of units to spawn at one time
+21,,,,,,Max number of units to spawn at one time
+22,,,,,,Spawn Level
+23,,,,,,Controls the number of units that spawn per round
+24,,,,,,Controls the number of units that spawn per round
+25,,,,,,Spawn Ram Level
+26,,,,,,The amount of rams to units that spawn
+27,,,,,,The amount of rams to units that spawn

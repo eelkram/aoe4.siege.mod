@@ -1,0 +1,225 @@
+--[[ 
+
+EXAMPLE GAME MODE SCRIPT
+
+This script demonstrates how to use an assortment of SCAR (Scripting at Relic) functions to create a Game Mode for Age of Empires IV. 
+We demonstrate how to setup a simple win condition that awards victory to the first player who constructs 5 houses and covers an assortment of topics like building/unit spawning, event tracking, and much more.
+
+Search for the following topic titles (e.g. OPTIONS, RULES, etc.) in this script to see examples of their usage. 
+
+- OPTIONS allow you to add buttons to the Skirmish/Custom lobby when your Game Mode is selected and trigger functions based on what the host has selected. The buttons are added in the Options section of the Win Condition .rdo file and their functionality is driven by this script.
+- RULES allow you to call script functions after a delay, on an interval, or whenever a game event (e.g. a unit is killed) occurs.
+- OBJECTIVES communicate what the players' goals are and how they are progressing towards them using a UI element at the top left of their screen.
+- ENTITIES are the objects you see in-game, like player constructed buildings, Sacred Sites, Stone Deposits, and Trees. Type "Entity_" in this script to view a list of functions you can use to manipulate these objects.
+- SQUADS are in-game units. Type "Squad_" in this script to view a list of functions you can use to manipulate these objects.
+- ENTITY GROUPS and SQUAD GROUPS (aka EGROUPS/SGROUPS) are bundles of Entities/Squads. It sometimes makes sense to add a number of objects to a group so you can manipulate them together (e.g. you may want to add a group of Spearmen to an SGROUP so you can command them all to attack a location).
+- UPGRADES unlock functionality for a player, a unit, or a building.
+- BLUEPRINTS are the instructions needed to create an Entity, Squad, or Upgrade. For example, a blueprint exists for each Civilization Villager. If you want to spawn a Mongol Villager, you will need to reference the Mongol Villager Blueprint. Type "BP_" in this script to view a list of Blueprint functions.
+- EVENT CUES are messages that appear in the queue at the bottom-right of the player's screen. Some event cues occur automatically, like when an upgrade completes. You can configure your own event cues to communicate important game mode events to the player.
+
+To play and test this Game Mode:
+
+1. From the editor toolbar, select File > Save All to save any changes you have made to this mod.
+2. From the editor toolbar, select Build > Build Mod.
+3. Launch Age of Empires IV.
+4. In the game client, navigate to Single Player > Skirmish > Create Game (alternatively, you can navigate to Multiplayer > Custom > Create Game).
+5. In the Game Setup tab of the lobby, select the Edit button.
+6. Select your Game Mode* and Start Game.
+
+*Your Game Mode will have a red wrench icon next to it. This means that it is a local mod and you cannot launch with other players in the lobby. If you would like to play this Game Mode with other players, you will either need to:
+1. Share your mod file with another player and have them place it in the following directory: YourDriveHere:\Users\YourNameHere\Documents\My Games\Cardinal\mods\extension\local 
+2. Publish your Mod from the Mods > My Mods screen. This will publish your Game Mode to all Age of Empires IV players! When a host selects your Game Mode, it will automatically be downloaded for other players in the lobby.
+
+
+Additional documentation and function references can be found online.
+
+]]
+
+-----------------------------------------------------------------------
+-- Imported Scripts
+
+-- When you import a .scar file it will be initialized alongside your Game Mode .scar script. 
+-- You can also call functions from imported scripts directly. For example, cardinal.scar has a function called Player_SetCurrentAge() that allows you to set the age of a given player. To use this function, you first have to import cardinal.scar as is demonstrated below.
+-- To examine the below scripts, right-click on the import() function and select "Open Document"
+-----------------------------------------------------------------------
+
+-- Import Utility Scripts
+import("cardinal.scar")							-- Contains sfx references, UI templates, and Civ/Age helper functions
+import("ScarUtil.scar")							-- Contains game helper functions
+
+-- Import Gameplay Systems
+import("gameplay/score.scar")					-- Tracks player score
+import("gameplay/diplomacy.scar")				-- Manages Tribute
+
+-- Import Win Conditions
+import("winconditions/annihilation.scar")		-- Support for eliminating a player when they can no longer fight or produce units
+import("winconditions/elimination.scar")		-- Support for player quitting or dropping (through pause menu or disconnection)
+import("winconditions/surrender.scar")			-- Support for player surrender (through pause menu)
+import("winconditions/wonder.scar")		        -- Support for Wonder win condition
+import("winconditions/religious.scar")		    -- Support for sacred sites?
+
+-- Import UI Support
+import("gameplay/chi/current_dynasty_ui.scar")	-- Displays Chinese Dynasty UI
+import("gameplay/event_cues.scar")
+import("gameplay/currentageui.scar")
+
+-----------------------------------------------------------------------
+-- Data
+-----------------------------------------------------------------------
+
+-- Global data table that can be referenced in script functions (e.g. _mod.module = "Mod")
+_mod = {
+	module = "Mod",
+	options = {},
+}
+
+-- Register the win condition (Some functions can be prepended with "Mod_" to be called automatically as part of the scripting framework)
+Core_RegisterModule(_mod.module)
+
+-----------------------------------------------------------------------
+-- Scripting framework 
+-----------------------------------------------------------------------
+
+-- TODO: On load confirm mongol players are all AI (human property on player object)
+-- TODO: Increase units based on counter and number of players
+-- TODO: Send units to other players bases
+
+-- Called during load as part of the game setup sequence
+function Mod_OnGameSetup()
+	
+	-- Get the host-selected Options configured in the mod's .rdo file
+	Setup_GetWinConditionOptions(_mod.options)
+	
+	-- Check if there is the economy_section data is available.
+	-- Not sure why this wouldn't, may not need check
+	if _mod.options.siege then
+		print("Spawn interval set to: ", _mod.options.siege.spawn_interval)
+		print("Spawn max set to: ", _mod.options.siege.spawn_max)
+		print("Spawn level set to: ", _mod.options.siege.spawn_level)
+		print("Spawn ram level set to: ", _mod.options.siege.spawn_ram_level)
+		
+	else
+		print("Settings _mod.options.siege Not Found!")
+	end
+end
+
+-- Called before initialization, preceding other module OnInit functions
+function Mod_PreInit()
+	
+	-- Enables the Tribute UI by calling the TributeEnabled function in diplomacy.scar, which was imported at the top of this script
+	-- Remove this or set to false if you do not want players to have access to resource trading via the Tribute panel
+	Core_CallDelegateFunctions("TributeEnabled", true)
+	
+end
+
+-- Called on match initialization before handing control to the player
+function Mod_OnInit()
+	
+	-- Store the local player so we can reference them later
+	localPlayer = Core_GetPlayersTableEntry(Game_GetLocalPlayer())
+	
+	-- AI Player
+	AIPlayer = Mod_GetAIPlayer()
+	
+	-- Unit Spawn Control
+	spawnCounter = 1
+	maxUnits = _mod.options.siege.spawn_max
+	
+	-- Spawn units based on setting
+	Rule_AddInterval(Mod_SpawnUnits, _mod.options.siege.spawn_interval)
+	
+	Core_CallDelegateFunctions("DiplomacyEnabled", false)
+	Core_CallDelegateFunctions("TributeEnabled", true)
+end
+
+-- Called after initialization is done when game is fading up from black
+function Mod_Start()
+
+end
+
+-- Called when Core_SetPlayerDefeated() is invoked. Signals that a player has been eliminated from play due to defeat.
+function Mod_OnPlayerDefeated(player, reason)
+	
+end
+
+-- When a victory condition is met, a module must call Core_OnGameOver() in order to invoke this delegate and notify all modules that the match is about to end. Generally used for clean up (removal of rules, objectives, and UI elements specific to the module).
+function Mod_OnGameOver()
+
+end
+
+-----------------------------------------------------------------------
+-- Mod Functions
+-----------------------------------------------------------------------
+
+-- Get AI Player
+function Mod_GetAIPlayer()
+
+	-- This is a for loop that does something for each player in the match.
+	-- PLAYERS is a table that contains all of the players in the match.
+	-- If there are two players it will run twice, if there are eight players it will run eight times, etc.
+	for i, player in pairs(PLAYERS) do
+		
+		-- Get player's Civilization name
+		local player_civ = Player_GetRaceName(player.id)
+		
+		if player_civ == "mongol" then
+			return player
+		end	
+	end
+end
+
+
+-- Spawn Waves
+function Mod_SpawnUnits()
+	-- Calculate Spawn Number
+	spawnCounter = spawnCounter+1
+	units = math.floor(spawnCounter * (_mod.options.siege.spawn_level / 10))
+	
+	-- Check max # of units per spawn
+	if units > maxUnits then
+		units = maxUnits
+	end
+	
+	-- For each Human player spawn a set of units and send to starting position
+	for i, player in pairs(PLAYERS) do
+		-- Get player's Civilization name
+		local player_civ = Player_GetRaceName(player.id)
+		
+		if player_civ ~= "mongol" then
+			-- Units
+			local sbp_spearman = BP_GetSquadBlueprint("unit_spearman_1_mon")
+			local sbp_ram = BP_GetSquadBlueprint("unit_ram_3_mon")
+		
+			-- Get Starting Position
+			local spawn_position = Player_GetStartingPosition(AIPlayer.id)
+			
+			-- Create a unique sgroup name for this player's spearmen units
+			local sgroup_name = "sg_player_spearmen_" .. tostring(AIPlayer.id)
+		
+			-- Create a SQUAD GROUP (SGROUP) that will act as a container for the spawned SQUADS
+			-- SGROUPS are useful for controlling all of the spawned units at once via scripted commands.
+			local sg_player_spearmen = SGroup_CreateIfNotFound(sgroup_name)
+			
+			-- After 15 rounds start spawning rams
+			if spawnCounter < 15 then
+				-- Spawn Spearmen
+				print("Spawning ", units, " spearmen for player id: ", player.id.PlayerID)
+				UnitEntry_DeploySquads(AIPlayer.id, sg_player_spearmen, {{sbp = sbp_spearman, numSquads = units }}, spawn_position)
+			else
+				-- Spawn Spearmen and Rams
+				local ramCount = math.floor(units * (_mod.options.siege.spawn_ram_level/100))
+				print("Spawning ", units, " spearmen for player id: ", player.id.PlayerID)
+				print("Spawning ", ramCount, " rams for player id: ", player.id.PlayerID)
+				UnitEntry_DeploySquads(AIPlayer.id, sg_player_spearmen, {{sbp = sbp_spearman, numSquads = units },{sbp = sbp_ram, numSquads = ramCount }}, spawn_position)
+			end
+		
+			-- Command the SGROUP to enter into a formation
+			-- Cmd_Ability(sg_player_spearmen, BP_GetAbilityBlueprint("core_formation_line"))
+			
+			-- Command the SGROUP to Move to enemy base
+			local enemy_position = Player_GetStartingPosition(player.id)
+			Cmd_FormationMove(sg_player_spearmen, enemy_position, false)
+
+		end	
+	end	
+end
