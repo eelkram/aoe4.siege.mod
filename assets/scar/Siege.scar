@@ -212,6 +212,8 @@ function Mod_SpawnUnits()
 				print("Spawning ", ramCount, " rams for player id: ", player.id.PlayerID)
 				UnitEntry_DeploySquads(AIPlayer.id, sg_player_spearmen, {{sbp = sbp_spearman, numSquads = units },{sbp = sbp_ram, numSquads = ramCount }}, spawn_position)
 			end
+			print("Reducing spearmen health to 10%")
+			SGroup_SetAvgHealth(sg_player_spearmen, 0.1)
 		
 			-- Command the SGROUP to enter into a formation
 			-- Cmd_Ability(sg_player_spearmen, BP_GetAbilityBlueprint("core_formation_line"))
